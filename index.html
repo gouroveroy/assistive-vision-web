@@ -1,0 +1,65 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>Assistive Vision</title>
+  <meta name="description" content="Spoken warnings about hazards seen by the phone camera. Runs on the device.">
+  <meta name="theme-color" content="#0b1220">
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="icon" href="icons/icon-192.png">
+  <link rel="apple-touch-icon" href="icons/icon-192.png">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+  <main>
+    <h1>Assistive Vision</h1>
+
+    <div id="stage">
+      <video id="cam" playsinline muted aria-hidden="true"></video>
+      <canvas id="overlay" aria-hidden="true"></canvas>
+    </div>
+
+    <p id="said" aria-hidden="true"></p>
+    <p id="status" role="status" aria-live="polite">Loading…</p>
+
+    <button id="toggle" type="button" aria-pressed="false" disabled>Start</button>
+
+    <p id="stats" aria-hidden="true"></p>
+
+    <details id="settings">
+      <summary>Settings</summary>
+
+      <label for="set-size">Detail
+        <select id="set-size">
+          <option value="0">Automatic</option>
+          <option value="320">Fast (320 px), misses small hazards</option>
+          <option value="480">Balanced (480 px)</option>
+          <option value="640">Detailed (640 px), slowest</option>
+        </select>
+      </label>
+
+      <label for="set-sens">Alert sensitivity: <output id="set-sens-out" for="set-sens"></output>
+        <input id="set-sens" type="range" min="-0.2" max="0.2" step="0.05">
+      </label>
+
+      <label for="set-rate">Speech speed: <output id="set-rate-out" for="set-rate"></output>
+        <input id="set-rate" type="range" min="0.7" max="1.8" step="0.1">
+      </label>
+
+      <label class="check"><input id="set-furniture" type="checkbox"> Also announce benches, chairs, bins and similar</label>
+      <label class="check"><input id="set-vibrate" type="checkbox"> Vibrate for vehicles and ground hazards</label>
+      <label class="check"><input id="set-boxes" type="checkbox"> Draw boxes on the camera view</label>
+      <label class="check"><input id="set-gpu" type="checkbox"> Use the graphics processor when available (applies after reloading)</label>
+
+      <p id="model-info" class="fine"></p>
+      <p class="fine">Everything runs on this device. No image leaves the phone.</p>
+      <p class="fine">This is a research prototype. It misses hazards and makes mistakes. It does not replace a cane, a guide dog or your own judgement.</p>
+    </details>
+  </main>
+  <script type="module" src="js/app.js"></script>
+</body>
+</html>

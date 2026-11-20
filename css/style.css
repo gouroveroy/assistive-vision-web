@@ -1,0 +1,159 @@
+:root {
+  --bg: #0b1220;
+  --panel: #152036;
+  --text: #f3f6fb;
+  --muted: #a9b6cc;
+  --accent: #2dd4bf;
+  --accent-text: #04201c;
+  --danger: #ff6b6b;
+  --danger-text: #2a0505;
+  color-scheme: dark;
+}
+
+* { box-sizing: border-box; }
+
+html, body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--text);
+  font: 18px/1.45 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  -webkit-text-size-adjust: 100%;
+}
+
+main {
+  max-width: 640px;
+  margin: 0 auto;
+  padding: max(12px, env(safe-area-inset-top)) 16px max(20px, env(safe-area-inset-bottom));
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  min-height: 100dvh;
+}
+
+h1 {
+  font-size: 1.15rem;
+  font-weight: 650;
+  letter-spacing: 0.02em;
+  margin: 4px 0 0;
+  color: var(--muted);
+}
+
+#stage {
+  /* --ar is the camera's width / height, set by app.js once it is known.
+     The box never exceeds 46% of the screen height and never distorts. */
+  --ar: 1.3333;
+  position: relative;
+  width: min(100%, calc(46dvh * var(--ar)));
+  aspect-ratio: var(--ar);
+  margin: 0 auto;
+  background: #000;
+  border-radius: 14px;
+  overflow: hidden;
+}
+#stage video, #stage canvas {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+}
+#stage video { object-fit: fill; }
+
+#said {
+  min-height: 1.6em;
+  margin: 0;
+  font-size: 1.35rem;
+  font-weight: 700;
+  text-align: center;
+  color: var(--accent);
+}
+
+#status {
+  margin: 0;
+  text-align: center;
+  color: var(--text);
+}
+
+#toggle {
+  flex: 1 0 auto;
+  min-height: 132px;
+  width: 100%;
+  border: 0;
+  border-radius: 20px;
+  background: var(--accent);
+  color: var(--accent-text);
+  font: inherit;
+  font-size: 2.2rem;
+  font-weight: 800;
+  letter-spacing: 0.03em;
+  touch-action: manipulation;
+}
+#toggle:disabled { opacity: 0.45; }
+#toggle:focus-visible, summary:focus-visible, input:focus-visible, select:focus-visible {
+  outline: 4px solid #fff;
+  outline-offset: 3px;
+}
+body.running #toggle {
+  background: var(--danger);
+  color: var(--danger-text);
+}
+
+#stats {
+  margin: 0;
+  min-height: 1.3em;
+  text-align: center;
+  font-size: 0.8rem;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+
+details {
+  background: var(--panel);
+  border-radius: 14px;
+  padding: 4px 16px;
+}
+summary {
+  padding: 14px 0;
+  font-weight: 650;
+  cursor: pointer;
+}
+details label {
+  display: block;
+  margin: 0 0 18px;
+}
+details select, details input[type="range"] {
+  display: block;
+  width: 100%;
+  margin-top: 8px;
+  font: inherit;
+}
+details select {
+  padding: 12px;
+  border-radius: 10px;
+  border: 1px solid #3a4a68;
+  background: var(--bg);
+  color: var(--text);
+}
+details input[type="range"] { height: 36px; accent-color: var(--accent); }
+label.check {
+  display: flex;
+  gap: 12px;
+  align-items: flex-start;
+}
+label.check input {
+  flex: none;
+  width: 26px;
+  height: 26px;
+  margin: 1px 0 0;
+  accent-color: var(--accent);
+}
+output { color: var(--accent); }
+.fine {
+  font-size: 0.85rem;
+  color: var(--muted);
+  margin: 0 0 12px;
+}
+
+@media (orientation: landscape) and (max-height: 520px) {
+  #stage { width: min(100%, calc(60dvh * var(--ar))); }
+  #toggle { min-height: 84px; }
+}

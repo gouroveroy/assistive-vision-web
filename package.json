@@ -1,0 +1,10 @@
+{
+  "name": "assistive-vision-webapp",
+  "private": true,
+  "type": "module",
+  "description": "Browser app: phone camera -> on-device hazard detection -> spoken alerts. No build step; this file only marks the folder as ES modules and names the test command.",
+  "scripts": {
+    "test": "node --test tests/unit.test.mjs",
+    "serve": "python serve.py"
+  }
+}

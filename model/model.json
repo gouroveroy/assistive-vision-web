@@ -1,0 +1,32 @@
+{
+  "file": "hazard.onnx",
+  "version": "f7e1d2f2e7cf",
+  "name": "yolo11s-hazard-v34",
+  "pipeline_version": "3.4",
+  "base_model": "yolo11s.pt",
+  "labels": [
+    "person",
+    "bicycle",
+    "car",
+    "motorcycle",
+    "bus",
+    "truck",
+    "traffic light",
+    "fire hydrant",
+    "stop sign",
+    "parking meter",
+    "bench",
+    "dog",
+    "chair",
+    "potted plant",
+    "pothole",
+    "puddle",
+    "stair",
+    "bad road",
+    "barrier",
+    "pole",
+    "drain",
+    "zebra cross",
+    "garbage bin"
+  ]
+}
