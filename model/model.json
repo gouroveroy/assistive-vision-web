@@ -1,8 +1,8 @@
 {
   "file": "hazard.onnx",
-  "version": "f7e1d2f2e7cf",
-  "name": "yolo11s-hazard-v34",
-  "pipeline_version": "3.4",
+  "version": "fa7e5277efa9",
+  "name": "yolo11s-hazard-v33",
+  "pipeline_version": "3.3",
   "base_model": "yolo11s.pt",
   "labels": [
     "person",
@@ -27,6 +27,8 @@
     "pole",
     "drain",
     "zebra cross",
+    "right turn",
+    "left turn",
     "garbage bin"
   ]
 }

@@ -58,9 +58,8 @@ camera frame → letterbox to a square → model (ONNX Runtime Web)
   close or changed side. Vehicles outrank ground hazards, which outrank
   obstacles. Only a close vehicle interrupts a sentence in progress.
 - **What it says.** Car, bus and truck are all "vehicle". Benches, chairs,
-  bins and similar are silent unless switched on in Settings. The current
-  model (3.4) has no `left turn` / `right turn` classes; with the older 3.3
-  model they are detected but never spoken, because it confuses them.
+  bins and similar are silent unless switched on in Settings. `left turn`
+  and `right turn` are never spoken: the 3.3 model confuses them.
 - **"Close"** is a guess from the box position and size, assuming the phone
   is held upright facing forward. It is not a distance measurement.
 

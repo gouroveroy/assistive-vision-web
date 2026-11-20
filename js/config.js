@@ -43,10 +43,10 @@ export const CLASS_INFO = {
   'parking meter': { plural: 'parking meters', priority: 4, kind: 'upright', conf: 0.5 },
   'stop sign': { plural: 'stop signs', priority: 4, kind: 'upright', conf: 0.5 },
 
-  // Not in models from pipeline 3.4 on. Kept so the 3.3 model (archived
-  // in archive/webapp_model_v3.3/) can still be loaded safely: there they
-  // score AP50 0.36 and 0.16 and are mistaken for each other, and a wrong
-  // direction is worse than none.
+  // Never spoken. In the 3.3 model (the one the app ships) these score
+  // AP50 0.36 and 0.16 and are mistaken for each other: 58% of real right
+  // turns are called left. Wrong directions are worse than none. Models
+  // from pipeline 3.4 on do not have these classes at all.
   'right turn': { announce: false, priority: 4, kind: 'ground', conf: 0.5 },
   'left turn': { announce: false, priority: 4, kind: 'ground', conf: 0.5 },
 };
