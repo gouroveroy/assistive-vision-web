@@ -59,7 +59,12 @@ camera frame → letterbox to a square → model (ONNX Runtime Web)
   obstacles. Only a close vehicle interrupts a sentence in progress.
 - **What it says.** Car, bus and truck are all "vehicle". Benches, chairs,
   bins and similar are silent unless switched on in Settings. `left turn`
-  and `right turn` are never spoken: the 3.3 model confuses them.
+  and `right turn` (3.3 models only) are never spoken: 3.3 confused them.
+- **Which model.** `model/` holds pipeline **3.5** (2026-11-28; version
+  `02bf2a6e6d6e`), trained with SideGuide's walker-height frames. At the
+  app's thresholds it found 4,024 more objects than 3.4 on the held-out
+  frames for 22 more false alarms. The 3.3 and 3.5 models are kept in
+  `archive/webapp_model_v3.3/` and `archive/webapp_model_v3.5/`.
 - **"Close"** is a guess from the box position and size, assuming the phone
   is held upright facing forward. It is not a distance measurement.
 

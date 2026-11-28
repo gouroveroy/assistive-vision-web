@@ -21,6 +21,9 @@ export const CLASS_INFO = {
   truck: VEHICLE,
   motorcycle: { plural: 'motorcycles', priority: 1, kind: 'upright', conf: 0.4 },
   bicycle: { plural: 'bicycles', priority: 1, kind: 'upright', conf: 0.4 },
+  // Dhaka classes, from pipeline 3.6 on (a 3.5 model has no rows for them).
+  rickshaw: { plural: 'rickshaws', priority: 1, kind: 'upright', conf: 0.45 },
+  'auto-rickshaw': { say: 'auto rickshaw', plural: 'auto rickshaws', priority: 1, kind: 'upright', conf: 0.45 },
 
   pothole: { plural: 'potholes', priority: 2, kind: 'ground', conf: 0.4 },
   puddle: { plural: 'puddles', priority: 2, kind: 'ground', conf: 0.45 },
@@ -34,6 +37,9 @@ export const CLASS_INFO = {
   dog: { plural: 'dogs', priority: 3, kind: 'upright', conf: 0.5 },
   'zebra cross': { say: 'crosswalk', plural: 'crosswalk', priority: 3, kind: 'ground', conf: 0.5 },
   'traffic light': { plural: 'traffic lights', priority: 3, kind: 'upright', conf: 0.5 },
+  tree: { plural: 'trees', priority: 3, kind: 'upright', conf: 0.5 },
+  'vendor stall': { say: 'stall', plural: 'stalls', priority: 3, kind: 'upright', conf: 0.5 },
+  cow: { plural: 'cows', priority: 3, kind: 'upright', conf: 0.5 },
 
   'garbage bin': { say: 'bin', plural: 'bins', priority: 4, kind: 'upright', conf: 0.5 },
   bench: { plural: 'benches', priority: 4, kind: 'upright', conf: 0.5 },
@@ -43,10 +49,10 @@ export const CLASS_INFO = {
   'parking meter': { plural: 'parking meters', priority: 4, kind: 'upright', conf: 0.5 },
   'stop sign': { plural: 'stop signs', priority: 4, kind: 'upright', conf: 0.5 },
 
-  // Never spoken. In the 3.3 model (the one the app ships) these score
-  // AP50 0.36 and 0.16 and are mistaken for each other: 58% of real right
-  // turns are called left. Wrong directions are worse than none. Models
-  // from pipeline 3.4 on do not have these classes at all.
+  // Never spoken. The 3.3 model scored them AP50 0.36 and 0.16 and mistook
+  // one for the other: 58% of real right turns were called left. Wrong
+  // directions are worse than none. Models from pipeline 3.4 on (the app
+  // ships 3.5) do not have these classes at all.
   'right turn': { announce: false, priority: 4, kind: 'ground', conf: 0.5 },
   'left turn': { announce: false, priority: 4, kind: 'ground', conf: 0.5 },
 };
