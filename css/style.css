@@ -88,7 +88,8 @@ h1 {
   touch-action: manipulation;
 }
 #toggle:disabled { opacity: 0.45; }
-#toggle:focus-visible, summary:focus-visible, input:focus-visible, select:focus-visible {
+#toggle:focus-visible, summary:focus-visible, input:focus-visible, select:focus-visible,
+button.minor:focus-visible {
   outline: 4px solid #fff;
   outline-offset: 3px;
 }
@@ -152,6 +153,20 @@ output { color: var(--accent); }
   color: var(--muted);
   margin: 0 0 12px;
 }
+button.minor {
+  display: block;
+  min-height: 48px;
+  margin: 0 0 16px;
+  padding: 10px 16px;
+  border: 1px solid #3a4a68;
+  border-radius: 10px;
+  background: var(--bg);
+  color: var(--text);
+  font: inherit;
+  font-size: 0.95rem;
+  touch-action: manipulation;
+}
+label.check:has(input:disabled) { color: var(--muted); }
 
 @media (orientation: landscape) and (max-height: 520px) {
   #stage { width: min(100%, calc(60dvh * var(--ar))); }

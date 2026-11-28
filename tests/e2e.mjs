@@ -1,11 +1,12 @@
 // End-to-end check in a real browser (installed Chrome, headless).
 //
-//   node webapp/tests/e2e.mjs --ref REF.json [--video CAMERA.y4m] [--cpu]
+//   node webapp/tests/e2e.mjs --ref REF.json [--video CAMERA.y4m] [--cpu] [--ios]
 //
 //   --ref    reference detections from tests/make_reference.py
 //   --video  a .y4m or .mjpeg file Chrome plays as the camera; enables the
 //            live part: tap Start, wait, check what was spoken
 //   --cpu    force WebAssembly even if the browser has WebGPU
+//   --ios    take the iPhone path (?ios): WebAssembly on one thread, no GPU
 //
 // Needs playwright-core (`npm install --no-save playwright-core` in
 // webapp/, or point E2E_NODE_MODULES at a folder that has it) and Python
@@ -15,6 +16,9 @@
 // by the web app with the same class name and an overlapping box.
 // Part 2 - live: the fake camera shows one picture; the app must process
 // frames, confirm what it sees and speak about it, without page errors.
+// Part 3 - crash recovery: a crash note left by a "killed" page makes the
+// next visit say so and step down to one thread.
+// Part 4 - static host without isolation headers, then offline.
 
 import { spawn } from 'node:child_process';
 import { createRequire } from 'node:module';
@@ -34,8 +38,10 @@ const arg = (name) => (argv.includes(name) ? argv[argv.indexOf(name) + 1] : null
 const refPath = arg('--ref');
 const video = arg('--video');
 const forceCpu = argv.includes('--cpu');
+const ios = argv.includes('--ios');
+const modeQuery = [forceCpu && 'cpu', ios && 'ios'].filter(Boolean).join('&');
 if (!refPath) {
-  console.error('usage: node e2e.mjs --ref REF.json [--video CAMERA.y4m] [--cpu]');
+  console.error('usage: node e2e.mjs --ref REF.json [--video CAMERA.y4m] [--cpu] [--ios]');
   process.exit(2);
 }
 const ref = JSON.parse(readFileSync(refPath, 'utf8'));
@@ -89,7 +95,7 @@ page.on('console', (m) => {
 });
 
 try {
-  const url = `http://localhost:${PORT}/index.html?nosw${forceCpu ? '&cpu' : ''}`;
+  const url = `http://localhost:${PORT}/index.html?nosw${modeQuery ? `&${modeQuery}` : ''}`;
   await page.goto(url);
   await page.waitForFunction(() => window.__av && window.__av.classes.length > 0, null, { timeout: 20000 });
   const labels = await page.evaluate(() => window.__av.classes.map((c) => c.name));
@@ -122,6 +128,14 @@ try {
       `${must.length ? ` (worst IoU ${worst.toFixed(2)})` : ''}, ${extra.length} unexplained` +
       ` · ${got.backend} ${got.inferMs.toFixed(0)} ms · ` +
       (mine.map((m) => `${m.name} ${m.score.toFixed(2)}`).join(', ') || 'nothing'));
+  }
+
+  if (ios) {
+    const s = await page.evaluate(() => window.__av.stats);
+    check(s.backend === 'wasm' && s.threads === 1,
+      `iPhone path: plain WebAssembly on one thread (${s.backend}, ${s.threads} thread(s))`);
+    const gpuDisabled = await page.evaluate(() => document.getElementById('set-gpu').disabled);
+    check(gpuDisabled, 'iPhone path: the graphics setting is shown as unavailable');
   }
 
   // Speed at each input size, on this computer (not a phone).
@@ -181,11 +195,48 @@ try {
     check(after.button === 'Start' && after.tracks === null, 'Stop releases the camera');
   }
 
-  // ── Part 3: static host without isolation headers, then offline ───────
+  // ── Part 3: crash recovery ────────────────────────────────────────────
+  console.log('\ncrash recovery');
+  const page3 = await context.newPage();
+  page3.on('pageerror', (e) => pageErrors.push(String(e)));
+  // What a page killed while watching on 4 threads at 480 px leaves behind.
+  // Planted before the app's script runs: a reload would not do, because
+  // a page that unloads normally (pagehide) wipes the note, as it should.
+  await page3.addInitScript(() => {
+    if (sessionStorage.getItem('planted')) return;
+    sessionStorage.setItem('planted', '1');
+    localStorage.removeItem('assistive-vision-limits-v1');
+    localStorage.setItem('assistive-vision-guard-v1',
+      JSON.stringify({ stage: 'running', gpu: false, threads: 4, size: 480, at: Date.now() }));
+  });
+  await page3.goto(`http://localhost:${PORT}/index.html?nosw`);
+  await page3.waitForFunction(() => window.__av && window.__av.classes.length > 0, null, { timeout: 20000 });
+  const rec = await page3.evaluate(() => ({
+    status: document.getElementById('status').textContent,
+    limits: window.__av.limits,
+    reset: !document.getElementById('reset-limits').hidden,
+  }));
+  console.log(`  status: ${rec.status}`);
+  check(/closed unexpectedly/.test(rec.status) && rec.limits.maxThreads === 1 && rec.reset,
+    'a crash note is reported and teaches a one-thread limit');
+  const after1 = await page3.evaluate(
+    ({ data }) => window.__av.detectImage(`data:image/jpeg;base64,${data}`, 320),
+    { data: readFileSync(ref.images[0].path).toString('base64') });
+  check(after1.threads === 1 && after1.detections.length > 0,
+    `the next model load uses one thread (${after1.backend}, ${after1.threads} thread(s))`);
+  await page3.evaluate(() => document.getElementById('reset-limits').click());
+  const cleared = await page3.evaluate(() => ({
+    stored: localStorage.getItem('assistive-vision-limits-v1'),
+    reset: !document.getElementById('reset-limits').hidden,
+  }));
+  check(cleared.stored === null && !cleared.reset, '"Forget the crash limits" clears them');
+  await page3.close();
+
+  // ── Part 4: static host without isolation headers, then offline ───────
   console.log('\nservice worker on a plain static host (as on GitHub Pages)');
   const page2 = await context.newPage();
   page2.on('pageerror', (e) => pageErrors.push(String(e)));
-  await page2.goto(`http://localhost:${PLAIN_PORT}/index.html${forceCpu ? '?cpu' : ''}`);
+  await page2.goto(`http://localhost:${PLAIN_PORT}/index.html${modeQuery ? `?${modeQuery}` : ''}`);
   // First load is not isolated; the page reloads itself once the worker controls it.
   await page2.waitForFunction(
     () => window.__av && window.__av.isolated && navigator.serviceWorker.controller && window.__av.classes.length > 0,

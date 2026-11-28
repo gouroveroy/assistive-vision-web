@@ -1,4 +1,5 @@
-// Offline checks for the parts that decide what gets drawn and said.
+// Offline checks for the parts that decide what gets drawn and said, and
+// how the detector is set up on each device.
 //     node --test webapp/tests/unit.test.mjs
 import test from 'node:test';
 import assert from 'node:assert/strict';
@@ -6,6 +7,7 @@ import assert from 'node:assert/strict';
 import { letterboxParams, rgbaToCHW, decode, nms, iou, toSourceCoords, postprocess } from '../js/yolo.js';
 import { AlertEngine, zoneOf, isClose, phrase } from '../js/alerts.js';
 import { classTable, CLASS_INFO } from '../js/config.js';
+import { isAppleMobile, runtimePlan, CrashGuard, describeCrash } from '../js/device.js';
 
 const near = (a, b, eps = 1e-6) => Math.abs(a - b) <= eps;
 
@@ -236,4 +238,110 @@ test('a detection that flickers off and on does not re-announce itself', () => {
   for (let i = 0; i < 45; i++) frames.push(i % 4 === 3 ? [] : p); // one dropped frame in four
   const said = run(e, frames);
   assert.equal(said.length, 1);
+});
+
+// ── device.js ───────────────────────────────────────────────────────────
+const IPHONE = { userAgent: 'Mozilla/5.0 (iPhone; CPU iPhone OS 26_1 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/26.1 Mobile/15E148 Safari/604.1', maxTouchPoints: 5 };
+const IPAD = { userAgent: 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/26.1 Safari/605.1.15', maxTouchPoints: 5 };
+const MAC = { userAgent: IPAD.userAgent, maxTouchPoints: 0 };
+const ANDROID = { userAgent: 'Mozilla/5.0 (Linux; Android 16; Pixel 9) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/142.0.0.0 Mobile Safari/537.36', maxTouchPoints: 5 };
+
+/** localStorage stand-in; `broken` throws like Safari's private mode once did. */
+function memoryStorage(broken = false) {
+  const m = new Map();
+  const guard = () => { if (broken) throw new Error('QuotaExceededError'); };
+  return {
+    getItem: (k) => { guard(); return m.has(k) ? m.get(k) : null; },
+    setItem: (k, v) => { guard(); m.set(k, String(v)); },
+    removeItem: (k) => { guard(); m.delete(k); },
+  };
+}
+
+test('iPhone and iPad (which claims to be a Mac) are recognised; Mac and Android are not', () => {
+  assert.equal(isAppleMobile(IPHONE), true);
+  assert.equal(isAppleMobile(IPAD), true);
+  assert.equal(isAppleMobile(MAC), false);
+  assert.equal(isAppleMobile(ANDROID), false);
+  assert.equal(isAppleMobile(undefined), false);
+});
+
+test('runtime plan: iPhone never gets WebGPU or extra threads unless the address asks', () => {
+  const base = { preferGpu: true, isolated: true, cores: 6 };
+  assert.deepEqual(runtimePlan({ ...base, apple: false }), { gpu: true, threads: 4, maxSize: 0 });
+  assert.deepEqual(runtimePlan({ ...base, apple: true }), { gpu: false, threads: 1, maxSize: 0 });
+  const addr = new URLSearchParams('gpu&threads=2');
+  assert.deepEqual(runtimePlan({ ...base, apple: true, params: addr }), { gpu: true, threads: 2, maxSize: 0 });
+  // ?cpu beats ?gpu; threads need isolation whatever the address says.
+  assert.equal(runtimePlan({ ...base, params: new URLSearchParams('cpu&gpu') }).gpu, false);
+  assert.equal(runtimePlan({ ...base, isolated: false, params: new URLSearchParams('threads=4') }).threads, 1);
+  assert.equal(runtimePlan({ ...base, preferGpu: false }).gpu, false);
+});
+
+test('runtime plan: limits learned from a crash apply on every device', () => {
+  const limits = { noGpu: true, maxThreads: 1, maxSize: 320 };
+  assert.deepEqual(runtimePlan({ preferGpu: true, isolated: true, cores: 8, limits }),
+    { gpu: false, threads: 1, maxSize: 320 });
+});
+
+test('crash guard: a stage that ends normally leaves nothing behind', () => {
+  const store = memoryStorage();
+  const g = new CrashGuard(store);
+  g.enter('loading', { gpu: true, threads: 4 });
+  g.leave();
+  assert.equal(new CrashGuard(store).recover(), null);
+});
+
+test('crash guard: each crash steps down one level (GPU, then threads, then size), then stops', () => {
+  const store = memoryStorage();
+  const visit = (stage, setup) => {
+    const g = new CrashGuard(store);
+    const c = g.recover();
+    g.enter(stage, setup); // ... and the page dies here
+    return c;
+  };
+  assert.equal(visit('loading', { gpu: true, threads: 4 }), null);
+  let c = visit('running', { gpu: false, threads: 4, size: 480 });
+  assert.equal(c.step, 'gpu');
+  assert.equal(c.stage, 'loading');
+  c = visit('running', { gpu: false, threads: 1, size: 480 });
+  assert.equal(c.step, 'threads');
+  c = visit('running', { gpu: false, threads: 1, size: 320 });
+  assert.equal(c.step, 'size');
+  c = new CrashGuard(store).recover();
+  assert.equal(c.step, null);
+  assert.match(describeCrash(c), /no lighter setting/);
+  const limits = new CrashGuard(store).limits;
+  assert.deepEqual([limits.noGpu, limits.maxThreads, limits.maxSize], [true, 1, 320]);
+  assert.equal(limits.crashes.length, 4);
+  new CrashGuard(store).resetLimits();
+  assert.deepEqual(new CrashGuard(store).limits, {});
+});
+
+test('crash guard: the background is not a crash, coming back is', () => {
+  const store = memoryStorage();
+  const g = new CrashGuard(store);
+  g.enter('running', { gpu: false, threads: 1, size: 480 });
+  g.suspend(); // iOS ends the page in the background
+  assert.equal(new CrashGuard(store).recover(), null);
+  g.resume(); // back in front, then the page dies
+  assert.equal(new CrashGuard(store).recover().step, 'size');
+});
+
+test('crash guard: blocked storage remembers nothing and never throws', () => {
+  for (const store of [memoryStorage(true), null]) {
+    const g = new CrashGuard(store);
+    g.enter('loading', { gpu: true });
+    assert.equal(g.recover(), null);
+    assert.deepEqual(g.limits, {});
+    g.leave();
+    g.resetLimits();
+  }
+});
+
+test('crash message names the stage, the set-up and the change', () => {
+  const t = describeCrash({ stage: 'loading', gpu: true, step: 'gpu' });
+  assert.match(t, /loading the detection model \(graphics processor\)/);
+  assert.match(t, /use the processor instead/);
+  assert.match(describeCrash({ stage: 'running', gpu: false, threads: 1, size: 480, step: 'size' }),
+    /watching the camera \(processor, 1 thread, 480 px\).*320 px/);
 });

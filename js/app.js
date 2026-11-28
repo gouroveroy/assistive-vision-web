@@ -4,6 +4,7 @@ import { Detector } from './detector.js';
 import { AlertEngine } from './alerts.js';
 import { Speaker } from './speech.js';
 import { classTable, DEFAULT_SETTINGS } from './config.js';
+import { isAppleMobile, runtimePlan, CrashGuard, describeCrash } from './device.js';
 
 const $ = (id) => document.getElementById(id);
 const el = {
@@ -12,9 +13,20 @@ const el = {
   size: $('set-size'), sens: $('set-sens'), sensOut: $('set-sens-out'),
   rate: $('set-rate'), rateOut: $('set-rate-out'), boxes: $('set-boxes'),
   furniture: $('set-furniture'), vibrate: $('set-vibrate'), gpu: $('set-gpu'),
-  modelInfo: $('model-info'),
+  modelInfo: $('model-info'), deviceNote: $('device-note'), resetLimits: $('reset-limits'),
 };
 const params = new URLSearchParams(location.search);
+// iPhone and iPad get a lighter set-up (see device.js); ?ios forces that
+// path on any browser, for testing it on a computer.
+const apple = isAppleMobile() || params.has('ios');
+let store = null;
+try {
+  store = window.localStorage;
+} catch { /* blocked: the crash guard remembers nothing */ }
+const guard = new CrashGuard(store);
+// Before anything else: did the last visit end in a crash?
+const lastCrash = guard.recover();
+let limits = guard.limits;
 
 // ── settings ────────────────────────────────────────────────────────────
 const SETTINGS_KEY = 'assistive-vision-settings-v1';
@@ -60,6 +72,9 @@ window.__av = {
   get stats() { return { ...stat, frames }; },
   get classes() { return classes; },
   get isolated() { return !!window.crossOriginIsolated; },
+  get limits() { return limits; },
+  apple,
+  lastCrash,
   settings,
   /** Run the model once on a still image: __av.detectImage('photo.jpg', 640) */
   async detectImage(url, size) {
@@ -81,7 +96,13 @@ window.__av = {
 
 /** The input size in use: the chosen one, or the automatic pick. */
 function inputSize() {
-  return settings.inputSize || (detector.backend === 'webgpu' ? 480 : 320);
+  const size = settings.inputSize || (detector.backend === 'webgpu' ? 480 : 320);
+  return limits.maxSize ? Math.min(size, limits.maxSize) : size;
+}
+
+/** What the crash guard records while the camera is being watched. */
+function runningSetup() {
+  return { gpu: detector.backend === 'webgpu', threads: detector.threads, size: inputSize() };
 }
 
 function setStatus(text) {
@@ -140,10 +161,24 @@ async function ensureDetector() {
   if (detector.session) return;
   setStatus('Downloading the detection model…');
   const url = `model/${model.file}?v=${encodeURIComponent(model.version)}`;
-  await detector.load(url, {
-    preferGpu: settings.preferGpu && !params.has('cpu'),
-    onProgress: (f) => setStatus(`Downloading the detection model… ${Math.round(f * 100)}%`),
+  const plan = runtimePlan({
+    apple,
+    preferGpu: settings.preferGpu,
+    isolated: !!window.crossOriginIsolated,
+    cores: navigator.hardwareConcurrency,
+    limits,
+    params,
   });
+  guard.enter('loading', { gpu: plan.gpu, threads: plan.threads });
+  try {
+    await detector.load(url, {
+      gpu: plan.gpu,
+      threads: plan.threads,
+      onProgress: (f) => setStatus(`Downloading the detection model… ${Math.round(f * 100)}%`),
+    });
+  } finally {
+    guard.leave();
+  }
   stat.backend = detector.backend;
   stat.threads = detector.threads;
 }
@@ -153,9 +188,12 @@ async function openCamera() {
   if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
     throw new Error('This browser cannot open the camera. The page must be served over HTTPS.');
   }
+  // The model never looks at more than 640 px. iPhone gets a smaller
+  // stream: every frame is copied out of the camera, and memory is tight.
+  const [w, h] = apple ? [960, 540] : [1280, 720];
   stream = await navigator.mediaDevices.getUserMedia({
     audio: false,
-    video: { facingMode: { ideal: 'environment' }, width: { ideal: 1280 }, height: { ideal: 720 } },
+    video: { facingMode: { ideal: 'environment' }, width: { ideal: w }, height: { ideal: h } },
   });
   el.video.srcObject = stream;
   await el.video.play();
@@ -254,6 +292,7 @@ async function loop() {
       console.error('inference failed', err);
       if (detector.backend === 'webgpu' && gpuFailures++ < 1 && (await detector.fallbackToWasm())) {
         stat.backend = detector.backend;
+        guard.enter('running', runningSetup());
         continue;
       }
       stop(`Detection stopped: ${err.message || err}`);
@@ -311,6 +350,7 @@ async function start() {
     await ensureDetector();
     await holdWakeLock();
     running = true;
+    guard.enter('running', runningSetup());
     engine.reset();
     lastSeenAnything = performance.now();
     lastTickEnd = 0;
@@ -339,6 +379,7 @@ async function start() {
 function stop(message) {
   const was = running;
   running = false;
+  guard.leave();
   closeCamera();
   if (wakeLock) {
     wakeLock.release().catch(() => {});
@@ -377,7 +418,10 @@ function bindSettings() {
       show();
       saveSettings();
     });
-  on(el.size, () => { settings.inputSize = Number(el.size.value); });
+  on(el.size, () => {
+    settings.inputSize = Number(el.size.value);
+    if (running) guard.enter('running', runningSetup());
+  });
   on(el.sens, () => {
     settings.sensitivity = -Number(el.sens.value);
     recomputeThresholds();
@@ -392,19 +436,67 @@ function bindSettings() {
   on(el.gpu, () => { settings.preferGpu = el.gpu.checked; });
 }
 
+/** Settings panel: what this device does differently, and why. */
+function showDeviceNote() {
+  const lines = [];
+  if (apple && !params.has('gpu')) {
+    lines.push('On iPhone and iPad the app runs on the processor, one thread at a time. ' +
+      'The graphics version of the detector makes Safari run out of memory and close the page.');
+  }
+  const learned = [
+    limits.noGpu && 'no graphics processor',
+    limits.maxThreads === 1 && 'one processor thread',
+    limits.maxSize && `at most ${limits.maxSize} px detail`,
+  ].filter(Boolean);
+  const crashes = limits.crashes || [];
+  if (crashes.length) {
+    const at = new Date(crashes[crashes.length - 1].at || Date.now());
+    lines.push(`The page closed unexpectedly ${crashes.length === 1 ? 'once' : `${crashes.length} times`}, ` +
+      `last on ${at.toLocaleString()}. ` +
+      (learned.length ? `Since then it uses ${learned.join(', ')}.` : ''));
+  }
+  el.deviceNote.textContent = lines.join(' ');
+  el.deviceNote.hidden = !lines.length;
+  el.resetLimits.hidden = !crashes.length && !learned.length;
+  // The graphics setting does nothing on iPhone; show it off and greyed
+  // out instead of ticked. The saved setting itself is left alone.
+  el.gpu.disabled = apple && !params.has('gpu');
+  if (el.gpu.disabled) el.gpu.checked = false;
+}
+
 el.toggle.addEventListener('click', () => (running ? stop() : start()));
 
+el.resetLimits.addEventListener('click', () => {
+  guard.resetLimits();
+  limits = guard.limits;
+  showDeviceNote();
+  setStatus('Crash limits forgotten. They apply from the next model load: reload the page.');
+});
+
 document.addEventListener('visibilitychange', () => {
-  // The camera is taken away when the page is hidden; pick the lock back up.
-  if (!document.hidden && running) holdWakeLock();
+  if (document.hidden) {
+    // iOS may end a page in the background; that is not a crash.
+    guard.suspend();
+  } else {
+    guard.resume();
+    // The camera is taken away when the page is hidden; pick the lock back up.
+    if (running) holdWakeLock();
+  }
+});
+window.addEventListener('pagehide', () => guard.suspend());
+window.addEventListener('pageshow', (e) => {
+  if (e.persisted) guard.resume();
 });
 
 (async function init() {
   bindSettings();
+  showDeviceNote();
   setupServiceWorker();
   try {
     await loadModelInfo();
-    setStatus('Ready. Tap Start, then hold the phone upright with the camera facing forward.');
+    setStatus(lastCrash
+      ? `${describeCrash(lastCrash)} Tap Start to try again.`
+      : 'Ready. Tap Start, then hold the phone upright with the camera facing forward.');
     el.toggle.disabled = false;
   } catch (err) {
     console.error(err);

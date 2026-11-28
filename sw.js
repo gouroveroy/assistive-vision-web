@@ -22,6 +22,7 @@ const SHELL = [
   'js/alerts.js',
   'js/speech.js',
   'js/config.js',
+  'js/device.js',
   'manifest.webmanifest',
   'icons/icon-192.png',
   'icons/icon-512.png',
